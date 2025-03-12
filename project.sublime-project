@@ -1,0 +1,60 @@
+{
+	"folders":
+	[
+		{
+			"path": ".",
+		},
+		{
+			"path": "Z:\\misc\\odin\\core",
+		},
+		{
+			"path": "Z:\\misc\\odin\\vendor\\raylib"
+		},
+	],
+	"build_systems":
+	[
+		{
+			"name": "Odin + Raylib + Hot Reload template",
+			"working_dir": "$project_path",
+			// This makes sublime able to jump to build errors.
+			"file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
+			
+			"windows": {
+				"shell_cmd": "build_hot_reload.bat",
+			},
+			"osx": {
+				"shell_cmd": "./build_hot_reload.sh run",
+			},
+			"linux":{ 
+				"shell_cmd": "./build_hot_reload.sh run",
+			},			
+		},
+		{
+			"name": "Odin + Raylib Web",
+			"working_dir": "$project_path",
+			// This makes sublime able to jump to build errors.
+			"file_regex": "^(.+)\\(([0-9]+):([0-9]+)\\) (.+)$",
+			
+			"windows": {
+				"shell_cmd": "build_web.bat z:\\misc\\emsdk",
+			},
+			"osx": {
+				"shell_cmd": "./build_web.sh",
+			},
+			"linux":{ 
+				"shell_cmd": "./build_web.sh",
+			},
+		}
+	],
+	"settings":
+	{		
+		"auto_complete": false,
+		"LSP":
+		{				
+			"odin":
+			{
+				"enabled": true,
+			},
+		},
+	},
+}

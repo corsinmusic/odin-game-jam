@@ -1,5 +1,11 @@
 # General
 .DS_Store
+*.rdbg
+project.sublime-workspace
 
 # Build artifacts
-build/
+build/**
+*.exe
+*.bin
+raylib.dll
+linux/**
