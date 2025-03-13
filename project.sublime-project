@@ -8,7 +8,10 @@
 			"path": "Z:\\misc\\odin\\core",
 		},
 		{
-			"path": "Z:\\misc\\odin\\vendor\\raylib"
+			"path": "Z:\\misc\\odin\\vendor\\raylib",
+		},
+		{
+			"path": "Z:\\misc\\odin\\base"
 		},
 	],
 	"build_systems":

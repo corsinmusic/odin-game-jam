@@ -35,6 +35,7 @@ import "core:math"
 import "core:slice"
 import rl "vendor:raylib"
 
+
 Rect :: rl.Rectangle
 Vec2 :: rl.Vector2
 
@@ -47,13 +48,28 @@ PIXEL_WINDOW_HEIGHT :: 360
 
 WINDOW_CENTER_X :: (PIXEL_WINDOW_WIDTH * 0.5)
 WINDOW_CENTER_Y :: (PIXEL_WINDOW_HEIGHT * 0.5)
-CLEAR_COLOR : rl.Color : {60, 10, 50, 255}
+CLEAR_COLOR : rl.Color : {80, 10, 70, 255}
 
 WORLD_PATH :: "assets/world.json"
 
-Room :: struct {
+BaseRoom :: struct {
     using rect: Recti,
 }
+
+Cockpit :: struct {
+    using base: BaseRoom,
+}
+
+Canteen :: struct {    
+    using base: BaseRoom,
+}
+
+Room :: union {
+    Cockpit,
+    Canteen,
+}
+
+
 
 World :: struct {
     rooms: [dynamic] Room,
@@ -229,7 +245,7 @@ draw :: proc() {
     draw_editor()
 
     //..
-
+/*
     mouse_pos := get_game_mouse_position()
     rl.DrawTextEx(g_mem.font, 
         fmt.ctprintfln("mouse pos %v \nzoom: %v\noffset: %v\ntarget: %v",
@@ -237,16 +253,18 @@ draw :: proc() {
         view.zoom,
         view.offset,
         view.target), {}, 32 / view.zoom, 0, rl.WHITE)
-    
+  */  
     rl.EndMode2D()
 
-
+    draw_editor_ui()
+    
+/*
     room_texture := atlas_textures[.Room]
     m_p := rl.GetMousePosition()
     t :=  cast(f32)(1 + math.sin(rl.GetTime() * 0.5)) * 0.5
 
     rl.DrawTexturePro(g_mem.atlas, room_texture.rect, {m_p.x, m_p.y, room_texture.document_size.x * ((t * 4) + 1), room_texture.document_size.y * (t * 4 + 1)}, {}, t * 360, rl.WHITE)
-
+*/
     rl.EndDrawing()        
 }
 
@@ -411,6 +429,7 @@ game_memory_size :: proc() -> int {
 game_hot_reloaded :: proc(mem: rawptr) {    
     g_mem = (^Game_Memory)(mem)
     g_editor = &g_mem.editor_state
+    editor_hot_reload()
 }
 
 @(export)
