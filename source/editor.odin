@@ -1,9 +1,10 @@
 package game
 
 //import "core:strings"
-//import "core:fmt"
-import "core:math"
 import "core:c"
+import "core:fmt"
+import "core:math"
+import "core:reflect"
 import rl "vendor:raylib"
 
 Coordinate_System :: enum {
@@ -35,11 +36,7 @@ Editor_State :: struct {
 	window: UI_Window,	
 }
 
-// TODO: look into how to do this correctly.
-g_input_buffer: [64]u8
-g_editor : ^Editor_State
-
-edit_text := false
+g_editor: ^Editor_State
 
 //..
 
@@ -55,7 +52,6 @@ get_editing_mouse_pos :: proc() -> Vec2i{
 	}
 	return result
 }
-
 
 draw_recti_resize_tool_tip :: proc(scale: f32, offset:Vec2 = {}) {
 	room := g_editor.edit_rect^
@@ -79,14 +75,127 @@ draw_editor :: proc() {
 	}
 }
 
+g_name1:string = ""
+g_name2:string = ""
+
+g_index:c.int = 0
 
 draw_editor_ui :: proc() {
+	
 	if(ui_start(&g_editor.window)) {
 		//ui_draw_text("hetto")
 		//ui_draw_text("test")
 		if(ui_button("hi")) {
 			// todo: task
 		}		
+
+		ui_text_box("#1", &g_name1, 150)
+		ui_text_box("#2", &g_name2, 150)
+
+
+		ui_data:UI_Data = UI_Dropdown_Data {}
+		id := typeid_of(type_of(ui_data))
+		type_info := reflect.type_info_base(type_info_of(id))
+		u, ok := type_info.variant.(reflect.Type_Info_Union)		
+		if ok {
+			for v in u.variants {
+				ui_draw_text(fmt.ctprint(v))
+			}
+		}
+
+		//sizerialize(obj, version)
+
+when false {
+		switch v in type_info.variant {
+		case reflect.Type_Info_Named: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Integer: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Rune: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Float: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Complex: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Quaternion: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_String: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Boolean: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Any: {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Type_Id : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Pointer : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Multi_Pointer : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Procedure : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Array : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Enumerated_Array : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Dynamic_Array : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Slice : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Parameters : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Struct : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Union : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Enum : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Map : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Bit_Set : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Simd_Vector : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Matrix : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Soa_Pointer : {
+			fmt.print(v)
+		}
+		case reflect.Type_Info_Bit_Field : {
+			fmt.print(v)
+		}
+		}
+}
+		//reflect.type_info_base(typeid_of(UI_Data)) //reflect.type_info_base(UI_Data)
+		//ui_dropdown_union("dropdown-union", &entity.variant, 180)
+		ui_draw_text(fmt.ctprint(get_game_mouse_position()))
+		ui_dropdown("dropdown-2", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
+		ui_dropdown("dropdown-1", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
+		//reflect.set_
 
 		// NOTE: end ui if it is visible
 		ui_end()
@@ -109,8 +218,9 @@ draw_editor_ui :: proc() {
 find_closest_room_corner :: proc(mouse_pos: Vec2i) -> i32 {
 	closest_index:i32 = -1
 	min_distance := max(i32)			
-	#reverse for room, idx in g_mem.world.rooms {
-		distance := length_sq(get_rect_max(room) - mouse_pos)
+	#reverse for room, idx in g_mem.world.rooms {		
+		max := get_rect_max(room)
+		distance := length_sq(max - mouse_pos)
 		if distance <= HOVER_RADIUS_SQ && distance < min_distance {
 			min_distance = distance
 			closest_index = cast(i32)idx
@@ -121,9 +231,6 @@ find_closest_room_corner :: proc(mouse_pos: Vec2i) -> i32 {
 }
 
 update_editor :: proc() {
-
-	room = g_mem.world.rooms[0]
-	process_room(room)
 
 	switch g_editor.mode {
 	case .HoveringCorner: fallthrough
@@ -286,12 +393,11 @@ update_editor :: proc() {
 	}
 	}
 
-	when ODIN_DEBUG {
+	if g_editor.editing {
 		if rl.IsKeyPressed(.TAB) {
 			g_editor.window.visible = !g_editor.window.visible
 		}
 	} else {
-		g_editor.editing = false
 		g_editor.mode = .Idle
 		g_editor.window.visible = false
 	}
@@ -309,15 +415,20 @@ editor_init :: proc() {
 	window := &g_editor.window
 	window.font = g_mem.font
 	window.font_size = ATLAS_FONT_SIZE * 0.5
-	window.items = make(map[string]UI_Data)
-	window.delayed_elements = make([dynamic]UI_Element, 0, 64)
+	window.items = make(map[string]UI_State)
+	window.delayed_items = make([dynamic]^UI_State, 0, 64)
 	
 	window.rect = {
 		{0, 0}, 150, 300,
 	}
 	window.padding = {10, 5}
+
+	g_window = nil
 }
 
 editor_shutdown :: proc() {
 	delete(g_editor.window.items)
+	delete(g_editor.window.delayed_items)
+	delete(g_name1)
+	delete(g_name2)
 }

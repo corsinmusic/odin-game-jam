@@ -52,22 +52,10 @@ CLEAR_COLOR : rl.Color : {80, 10, 70, 255}
 
 WORLD_PATH :: "assets/world.json"
 
-BaseRoom :: struct {
+Room :: struct {
     using rect: Recti,
 }
 
-Cockpit :: struct {
-    using base: BaseRoom,
-}
-
-Canteen :: struct {    
-    using base: BaseRoom,
-}
-
-Room :: union {
-    Cockpit,
-    Canteen,
-}
 
 
 
@@ -79,6 +67,8 @@ Game_View :: struct {
     using camera: rl.Camera2D,           
     using position: Vec2i,
 }
+
+//..
 
 Game_Memory :: struct {
     view: Game_View,
@@ -239,7 +229,7 @@ draw :: proc() {
     rl.DrawRectangleRec({0, 0, PIXEL_WINDOW_WIDTH, PIXEL_WINDOW_HEIGHT}, CLEAR_COLOR)
 
     for room in g_mem.world.rooms {
-        draw_room(room)
+        draw_room(room.rect)
     }
     // NOTE: editor
     draw_editor()
@@ -258,13 +248,13 @@ draw :: proc() {
 
     draw_editor_ui()
     
-/*
+
     room_texture := atlas_textures[.Room]
     m_p := rl.GetMousePosition()
     t :=  cast(f32)(1 + math.sin(rl.GetTime() * 0.5)) * 0.5
 
     rl.DrawTexturePro(g_mem.atlas, room_texture.rect, {m_p.x, m_p.y, room_texture.document_size.x * ((t * 4) + 1), room_texture.document_size.y * (t * 4 + 1)}, {}, t * 360, rl.WHITE)
-*/
+
     rl.EndDrawing()        
 }
 
@@ -378,8 +368,7 @@ game_init :: proc() {
         }
     }
 
-    game_hot_reloaded(g_mem)
-
+    game_hot_reloaded(g_mem)    
     editor_init()
 }
 
