@@ -1,5 +1,6 @@
 package game
 
+import "core:reflect"
 import "core:strings"
 import "core:math"
 import "core:c"
@@ -75,7 +76,7 @@ ui_start :: proc(window:^UI_Window) -> bool {
 
 	if result {			
 		g_window = window
-		//rl.GuiSetFont(window.font)		
+		rl.GuiSetFont(window.font)		
 		rl.GuiSetStyle(.DEFAULT, i32(rl.GuiDefaultProperty.TEXT_SIZE), g_window.font_size)
 
 		g_window.width = max(g_window.width, 150)
@@ -123,7 +124,7 @@ ui_end :: proc() {
 			if(rl.GuiDropdownBox(data.rect, data.options, &data.index, item.focused)) {
 				item.focused = !item.focused
 			}
-			
+
 			if(item.focused) {
 				g_window.lockui = true
 			}
@@ -169,11 +170,17 @@ ui_get_next_pos :: proc() -> Vec2 {
 	return result
 }
 
-ui_push_item_dim :: proc(dim:Vec2) {
+ui_push_item_dim_bounds :: proc(cursor_dim:Vec2, bounds_dim:Vec2) {
 	assert(g_window != nil)
-	g_window.cursor.y += dim.y
-	g_window.max.y += dim.y
-	g_window.max.x = math.max(g_window.max.x, dim.x)
+	abs_cursor_y := g_window.cursor.y - f32(g_mem.view.position.y) - g_window.scroll_pos.y
+	g_window.cursor.y += cursor_dim.y
+	g_window.max.y = math.max(g_window.max.y, abs_cursor_y + bounds_dim.y)
+	g_window.max.x = math.max(g_window.max.x, bounds_dim.x)
+}
+
+
+ui_push_item_dim :: proc(dim:Vec2) {
+	ui_push_item_dim_bounds(dim, dim)
 }
 
 ui_text_box :: proc(id: string, target:^string, width: f32) {
@@ -235,15 +242,15 @@ ui_button :: proc(lable: cstring) -> bool {
 ui_draw_text :: proc(text: cstring) {
 	assert(g_window != nil)
 	pos := ui_get_next_pos()
-	size := Vec2 {f32(rl.MeasureText(text, g_window.font_size)), f32(g_window.font_size)}
+	size := Vec2 {f32(rl.MeasureText(text, g_window.font_size)) + f32(len(text) * 2), f32(g_window.font_size)}
 	rect := Rect {pos.x, pos.y, size.x, size.y} 
-	//rl.DrawRectangleRec(rect, rl.RED)
+	rl.DrawRectangleRec(rect, rl.RED)
 	rl.GuiLabel(rect, text)
 	dim := size + 2 * g_window.padding
 	ui_push_item_dim(dim)
 }
 
-ui_dropdown :: proc(id: string, options:cstring, index:^c.int, width:u32 ) {
+ui_dropdown :: proc(id:string, options:cstring, index:^c.int, width:u32 ) {
 	assert(g_window != nil)
 	ui_data := get_ui_data(id)
 
@@ -256,17 +263,18 @@ ui_dropdown :: proc(id: string, options:cstring, index:^c.int, width:u32 ) {
 	if ui_data.focused {
 		option_count := 1
 		s_options := string(options)
-		last_idx := len(s_options) - 1
-		for r, idx in s_options {
-			if r == ';' && idx < last_idx { 
+		for r in s_options {
+			if r == ';' { 
 				option_count += 1
 			}
 		}
 		spacing := rl.GuiGetStyle(.DROPDOWNBOX, c.int(rl.GuiDropdownBoxProperty.DROPDOWN_ITEMS_SPACING))
-		dim.y += (f32(spacing) + size.y) * f32(option_count)
-	}
-
-	ui_push_item_dim(dim)
+		bounds := dim
+		bounds.y += (f32(spacing) + size.y) * f32(option_count)
+		ui_push_item_dim_bounds(dim, bounds)
+	} else {
+		ui_push_item_dim(dim)
+	}	
 
 	dropdown_data, ok := &ui_data.data.(UI_Dropdown_Data)
 	if !ok {
@@ -284,4 +292,53 @@ ui_dropdown :: proc(id: string, options:cstring, index:^c.int, width:u32 ) {
 	}
 
 	ui_push_delayed_item(ui_data)
+}
+
+ui_union_dropdown :: proc(id:string, target:^$T, width:u32) {
+	if target != nil {		
+		u_id := typeid_of(type_of(target^))
+		type_info := reflect.type_info_base(type_info_of(u_id))
+
+		if info, ok := type_info.variant.(reflect.Type_Info_Union); ok {
+			options := make([dynamic]string, allocator = context.temp_allocator)
+			
+			for v in info.variants {
+				named_type, is_named := v.variant.(reflect.Type_Info_Named)
+				if is_named {
+					append(&options, named_type.name)
+				}			
+			}
+			
+			tag: i32 = cast(i32)reflect.get_union_variant_raw_tag(target^)		
+			if !info.no_nil {
+				if tag == 0 {
+					// TODO: error handling
+					return
+				}
+				tag -= 1
+			}
+
+			ui_data := get_ui_data(id)
+			dropdown_data, is_dropdown := ui_data.data.(UI_Dropdown_Data)
+
+			if is_dropdown && dropdown_data.was_focused {
+				if dropdown_data.index != tag {
+					tag = dropdown_data.index
+					raw_tag := tag if info.no_nil else (tag + 1)
+					reflect.set_union_variant_raw_tag(target^, i64(raw_tag))
+				}
+			}
+
+			temp := strings.join(options[:], ";", allocator = context.temp_allocator)
+			csoptions := strings.clone_to_cstring(temp, allocator = context.temp_allocator)
+
+			index:c.int = i32(tag)
+			ui_dropdown(id, csoptions, &index, width)
+		} else {
+			// TODO: error handling
+		}
+	} else {
+		// TODO: erro handling
+	}
+
 }

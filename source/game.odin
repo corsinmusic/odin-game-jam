@@ -248,13 +248,13 @@ draw :: proc() {
 
     draw_editor_ui()
     
-
+/*
     room_texture := atlas_textures[.Room]
     m_p := rl.GetMousePosition()
     t :=  cast(f32)(1 + math.sin(rl.GetTime() * 0.5)) * 0.5
 
     rl.DrawTexturePro(g_mem.atlas, room_texture.rect, {m_p.x, m_p.y, room_texture.document_size.x * ((t * 4) + 1), room_texture.document_size.y * (t * 4 + 1)}, {}, t * 360, rl.WHITE)
-
+*/
     rl.EndDrawing()        
 }
 

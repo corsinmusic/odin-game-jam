@@ -80,14 +80,21 @@ g_name2:string = ""
 
 g_index:c.int = 0
 
+g_data: UI_Data = UI_Textbox_Data {}
+
 draw_editor_ui :: proc() {
 	
 	if(ui_start(&g_editor.window)) {
-		//ui_draw_text("hetto")
-		//ui_draw_text("test")
+		ui_draw_text(fmt.ctprint(get_game_mouse_position()))
+		ui_dropdown("dropdown-2", "Cockpit;Canteen", &g_index, 180)
+		ui_dropdown("dropdown-1", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
+		
 		if(ui_button("hi")) {
 			// todo: task
 		}		
+
+	
+		ui_union_dropdown("union-dropdown", &g_data, 180)
 
 		ui_text_box("#1", &g_name1, 150)
 		ui_text_box("#2", &g_name2, 150)
@@ -192,9 +199,7 @@ when false {
 }
 		//reflect.type_info_base(typeid_of(UI_Data)) //reflect.type_info_base(UI_Data)
 		//ui_dropdown_union("dropdown-union", &entity.variant, 180)
-		ui_draw_text(fmt.ctprint(get_game_mouse_position()))
-		ui_dropdown("dropdown-2", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
-		ui_dropdown("dropdown-1", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
+	
 		//reflect.set_
 
 		// NOTE: end ui if it is visible
