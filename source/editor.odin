@@ -17,15 +17,25 @@ Interaction_Mode :: enum {
 	CreateRoom,
 	ResizeRect,
 	MoveRect,
-	HoveringCorner,	
+	HoveringCorner,
+	AddRoomConnection,
+}
+
+Interaction_Type :: enum {
+	Normal,
+	SelectedRoom,
 }
 
 Interaction_State :: struct {
+	type: Interaction_Type,
 	mode: Interaction_Mode,
 	coordinate_system: Coordinate_System,
+
 	edit_rect: ^Recti,
 	anchor: Vec2i,
 	create_rect: Recti,		
+
+	room_idx:i32,
 }
 
 Editor_State :: struct {
@@ -73,6 +83,17 @@ draw_editor :: proc() {
 			}
 		}
 	}
+
+	if g_editor.type == .SelectedRoom && g_editor.room_idx >= 0 {
+		room := g_mem.world.rooms[g_editor.room_idx]
+		thickness:f32 = 2
+		rect := to_rect(room.rect)
+		rect.x -= thickness
+		rect.y -= thickness
+		rect.width += thickness * 2
+		rect.height += thickness * 2
+		rl.DrawRectangleLinesEx(rect, thickness, rl.YELLOW)
+	}
 }
 
 g_name1:string = ""
@@ -85,125 +106,93 @@ g_data: UI_Data = UI_Textbox_Data {}
 draw_editor_ui :: proc() {
 	
 	if(ui_start(&g_editor.window)) {
-		ui_draw_text(fmt.ctprint(get_game_mouse_position()))
-		ui_dropdown("dropdown-2", "Cockpit;Canteen", &g_index, 180)
-		ui_dropdown("dropdown-1", "Cockpit;Canteen;Sleeping;Engine;Filtration;Medical;Farm", &g_index, 180)
-		
-		if(ui_button("hi")) {
-			// todo: task
-		}		
+		font_size:f32 = 12
 
-	
-		ui_union_dropdown("union-dropdown", &g_data, 180)
-
-		ui_text_box("#1", &g_name1, 150)
-		ui_text_box("#2", &g_name2, 150)
-
-
-		ui_data:UI_Data = UI_Dropdown_Data {}
-		id := typeid_of(type_of(ui_data))
-		type_info := reflect.type_info_base(type_info_of(id))
-		u, ok := type_info.variant.(reflect.Type_Info_Union)		
-		if ok {
-			for v in u.variants {
-				ui_draw_text(fmt.ctprint(v))
+		for connection in g_mem.world.connections {
+			if g_editor.room_idx != i32(connection.a_idx) &&
+			g_editor.room_idx != i32(connection.b_idx) {
+				push_room_connection(connection, rl.BLACK, font_size)
 			}
 		}
 
-		//sizerialize(obj, version)
+		if ui_button((g_editor.editing) ? "stop editing" : "start editing") {
+			g_editor.editing = !g_editor.editing
+		}
+		switch(g_editor.type) {
+		case .Normal: {
+			if(ui_button("select room")) {
+				g_editor.type = .SelectedRoom
+				g_editor.mode = .Idle
+				g_editor.room_idx = -1
+			}
+		}
+		case .SelectedRoom: {		
 
-when false {
-		switch v in type_info.variant {
-		case reflect.Type_Info_Named: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Integer: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Rune: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Float: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Complex: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Quaternion: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_String: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Boolean: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Any: {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Type_Id : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Pointer : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Multi_Pointer : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Procedure : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Array : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Enumerated_Array : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Dynamic_Array : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Slice : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Parameters : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Struct : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Union : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Enum : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Map : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Bit_Set : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Simd_Vector : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Matrix : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Soa_Pointer : {
-			fmt.print(v)
-		}
-		case reflect.Type_Info_Bit_Field : {
-			fmt.print(v)
-		}
-		}
-}
-		//reflect.type_info_base(typeid_of(UI_Data)) //reflect.type_info_base(UI_Data)
-		//ui_dropdown_union("dropdown-union", &entity.variant, 180)
-	
-		//reflect.set_
+			if g_editor.mode == .AddRoomConnection {
+				rl.GuiLock()				
+			}
 
-		// NOTE: end ui if it is visible
-		ui_end()
+			if ui_button("edit world") {
+				g_editor.type = .Normal
+			}
+
+			if g_editor.room_idx >= 0 {
+				if g_editor.mode == .AddRoomConnection {
+					if !g_window.lockui {
+						rl.GuiUnlock()
+					}
+					if ui_button("stop add connections") {
+						g_editor.mode = .Idle
+					}
+					rl.GuiLock()
+				} else {
+					if ui_button("add connections") {
+						g_editor.mode = .AddRoomConnection
+					}
+				}
+
+				room := &g_mem.world.rooms[g_editor.room_idx]
+				ui_union_dropdown("room-variant", &room.variant_data, 200)
+
+				mouse_pos := rl.GetMousePosition()
+				window_y := f32(g_window.position.y)
+				mouse_in_window_bounds := is_in_rectangle(g_window.abs_rect, mouse_pos)
+
+
+				for connection_idx, idx in room.connections {
+					connection := &g_mem.world.connections[connection_idx]
+
+					start_cursor_y := g_window.cursor.y + window_y
+					
+					ui_draw_text(fmt.ctprintfln("%v: %v - %v", connection_idx, connection.a_idx, connection.b_idx))
+					ui_same_line()
+					string_id := fmt.tprintfln("%v-connection-%v", g_editor.room_idx, idx)
+					ui_edit_i32(string_id, &connection.distance, 1, 100, 90)
+					ui_same_line()
+					if(ui_button("delete")) {
+						delete_connection(connection_idx)
+					}
+
+					if mouse_in_window_bounds && 
+					mouse_pos.y >= start_cursor_y && mouse_pos.y < (g_window.cursor.y + window_y) {
+						push_room_connection(connection^, rl.BROWN, font_size)
+					} else {
+						push_room_connection(connection^, rl.BLUE, font_size)
+					}
+
+				}
+			}
+
+			if g_editor.mode == .AddRoomConnection {
+				rl.EndScissorMode()
+				ui_draw_window_rect({50, 50, 50, 100})
+				ui_clip_window()
+			}
+		}
+		}
+
+		ui_draw_text(fmt.ctprintf("%v", g_window.position))
+		ui_end()		
 	}
 
 	//..
@@ -224,7 +213,7 @@ find_closest_room_corner :: proc(mouse_pos: Vec2i) -> i32 {
 	closest_index:i32 = -1
 	min_distance := max(i32)			
 	#reverse for room, idx in g_mem.world.rooms {		
-		max := get_rect_max(room)
+		max := get_rect_max(room.rect)
 		distance := length_sq(max - mouse_pos)
 		if distance <= HOVER_RADIUS_SQ && distance < min_distance {
 			min_distance = distance
@@ -235,12 +224,101 @@ find_closest_room_corner :: proc(mouse_pos: Vec2i) -> i32 {
 	return closest_index
 }
 
+remove_connection :: proc(room: ^Room, idx: u32) {
+	
+	for i in 0..<len(room.connections) {
+		connection_idx := room.connections[i]
+		if connection_idx == idx {
+			unordered_remove(&room.connections, i)
+			break
+		}
+	}
+}
+
+
+delete_connection :: proc(idx: u32) {
+	connection := g_mem.world.connections[idx]
+	unordered_remove(&g_mem.world.connections, idx)
+	last_idx := u32(len(g_mem.world.connections))
+
+	room_a := &g_mem.world.rooms[connection.a_idx]
+	room_b := &g_mem.world.rooms[connection.b_idx]
+	remove_connection(room_a, idx)
+	remove_connection(room_b, idx)
+
+	for &room in g_mem.world.rooms {
+		for connection_idx, i in room.connections {
+			if connection_idx == last_idx {
+				room.connections[i] = idx
+			}
+		}
+	}
+}
+
+delete_room :: proc(idx: u32) {
+	room := g_mem.world.rooms[idx]
+
+	// NOTE: remove connections
+	for i in room.connections {
+		connection := g_mem.world.connections[i]
+
+		// NOTE: remove connections to room in other rooms
+		other_idx:u32
+		if connection.a_idx == idx {
+			other_idx = connection.b_idx
+		} else {
+			assert(connection.b_idx == idx)
+			other_idx = connection.a_idx
+		}
+
+		other := &g_mem.world.rooms[other_idx]
+		for other_connection_idx, j in other.connections {
+			if other_connection_idx == i {
+				unordered_remove(&other.connections, j)
+				break
+			}
+		}
+
+		unordered_remove(&g_mem.world.connections, i)
+		last_idx := u32(len(g_mem.world.connections))
+		// NOTE: update connection idx after removing connection
+		for &test_room in g_mem.world.rooms {
+			for connection_idx, j in test_room.connections {
+				if last_idx == connection_idx {
+					test_room.connections[j] = i
+				}
+			}
+		}
+	}
+
+	unordered_remove(&g_mem.world.rooms, idx)
+
+	// NOTE: update room idx in connections	
+	last_idx := u32(len(g_mem.world.rooms))
+	for &connection in g_mem.world.connections {
+		if connection.a_idx == last_idx {
+			connection.a_idx = idx
+		} else if (connection.b_idx == last_idx) {
+			connection.b_idx = idx
+		}
+	}
+
+}
+
 update_editor :: proc() {
+
+	if g_editor.type == .SelectedRoom &&
+	g_editor.mode == .Idle && rl.IsKeyPressed(.ESCAPE) {
+		g_editor.type = .Normal
+	}
+
+	if g_editor.type != .SelectedRoom {
+		g_editor.room_idx = -1
+	}
 
 	switch g_editor.mode {
 	case .HoveringCorner: fallthrough
-	case .Idle: {
-		
+	case .Idle: {		
 
 		lmb_pressed := rl.IsMouseButtonPressed(.LEFT)
 
@@ -302,36 +380,48 @@ update_editor :: proc() {
 					g_editor.mode = .ResizeRect
 					g_editor.coordinate_system = .Game
 					room := g_mem.world.rooms[room_index]
-					g_editor.anchor = {room.width - mouse_pos.x, room.height - mouse_pos.y}
+					g_editor.anchor = {room.rect.width - mouse_pos.x, room.rect.height - mouse_pos.y}
 				}
 				
-				if g_editor.mode == .Idle {
+				if g_editor.mode == .Idle {					
 					#reverse for room, idx in g_mem.world.rooms {
-						if is_in_rectangle(room, mouse_pos) {
-							if rl.IsKeyUp(.LEFT_SHIFT) {
-								g_editor.mode = .MoveRect
-								g_editor.anchor = room.position - mouse_pos
-								g_editor.edit_rect = &g_mem.world.rooms[idx]
-								g_editor.coordinate_system = .Game
+						if is_in_rectangle(room.rect, mouse_pos) {							
+							if g_editor.type == .SelectedRoom {
+								if i32(idx) == g_editor.room_idx {
+									g_editor.room_idx = -1
+									g_editor.type = .Normal
+								} else {
+									g_editor.room_idx = i32(idx)
+								}
 							} else {
-								ordered_remove(&g_mem.world.rooms, idx)
+								if rl.IsKeyUp(.LEFT_SHIFT) {
+									g_editor.mode = .MoveRect
+									g_editor.anchor = room.rect.position - mouse_pos
+									g_editor.edit_rect = &g_mem.world.rooms[idx].rect
+									g_editor.coordinate_system = .Game
+								} else {								
+									delete_room(u32(idx))
+								}	
 							}
+							
 							break
 						}			
 					}		
 				}
 
-				if g_editor.mode == .Idle {				
+				if g_editor.type == .Normal &&
+				g_editor.mode == .Idle {				
 					g_editor.mode = .CreateRoom
 					g_editor.anchor = mouse_pos
 					g_editor.create_rect = {}
 					g_editor.coordinate_system = .Game
 				}
 			} else {
+
 				room_index := find_closest_room_corner(mouse_pos)
 				if room_index >= 0 {
 					g_editor.mode = .HoveringCorner
-					g_editor.edit_rect = &g_mem.world.rooms[room_index]
+					g_editor.edit_rect = &g_mem.world.rooms[room_index].rect
 					g_editor.coordinate_system = .Game
 				} else {
 					g_editor.mode = .Idle					
@@ -387,7 +477,8 @@ update_editor :: proc() {
 			g_editor.mode = .Idle
 		}
 	}
-	case .MoveRect: {
+	case .MoveRect: {	
+		
 		if rl.IsMouseButtonDown(.LEFT) {
 
 			mouse_pos := get_editing_mouse_pos()
@@ -396,16 +487,71 @@ update_editor :: proc() {
 			g_editor.mode = .Idle
 		}
 	}
+	case .AddRoomConnection: {
+
+		if rl.IsKeyPressed(.ESCAPE) {
+			g_editor.mode = .Idle
+		}
+
+		if g_editor.type != .SelectedRoom || g_editor.room_idx < 0{
+			g_editor.mode = .Idle
+		} else {			
+			if rl.IsMouseButtonPressed(.LEFT) {
+				mouse_pos := get_game_mouse_position()
+				selected_room := &g_mem.world.rooms[g_editor.room_idx]
+				#reverse for &room, idx in g_mem.world.rooms {
+					if is_in_rectangle(room.rect, mouse_pos) {
+
+						if i32(idx) == g_editor.room_idx {
+							continue
+						}
+
+						connection_idx := u32(len(g_mem.world.connections))
+						new_connection := true
+
+						for selected_connection_idx in selected_room.connections {
+							selected_connection := g_mem.world.connections[selected_connection_idx]
+
+							if selected_connection.a_idx == u32(idx) ||
+							selected_connection.b_idx == u32(idx) {
+								new_connection = false
+								break
+							}
+						}
+
+						if new_connection {
+							append(&g_mem.world.connections, 
+								Room_Connection { a_idx = u32(g_editor.room_idx), 
+								b_idx = u32(idx),
+								distance = 1 })
+
+							append(&room.connections, connection_idx)
+							append(&selected_room.connections, connection_idx)
+						}
+
+						break
+					}
+				}
+			}
+		}
+
+	}
 	}
 
-	if g_editor.editing {
+	when ODIN_DEBUG {
 		if rl.IsKeyPressed(.TAB) {
 			g_editor.window.visible = !g_editor.window.visible
+			if g_editor.window.visible {
+				g_editor.editing = true
+			}
 		}
-	} else {
-		g_editor.mode = .Idle
-		g_editor.window.visible = false
 	}
+
+	if !g_editor.editing {
+		g_editor.type = .Normal
+		g_editor.mode = .Idle
+		g_editor.window.visible = false		
+	}	
 }
 
 //..
@@ -416,10 +562,11 @@ editor_hot_reload :: proc() {
 
 editor_init :: proc() {
 	g_editor.editing = ODIN_DEBUG
+	g_editor.room_idx = -1
 
 	window := &g_editor.window
 	window.font = g_mem.font
-	window.font_size = ATLAS_FONT_SIZE * 0.5
+	window.font_size = ATLAS_FONT_SIZE
 	window.items = make(map[string]UI_State)
 	window.delayed_items = make([dynamic]^UI_State, 0, 64)
 	

@@ -30,11 +30,14 @@ UI_State :: struct {
 
 UI_Window :: struct {	
 	using rect: Recti,
+	abs_rect: Rect,
+	//
 	clip_rect: Rect,	
 	scroll_pos: Vec2,
 	max: Vec2, // NOTE: used to determine the content size
 	//..
 	cursor:Vec2,  // NOTE: used for layout
+	prev_pos:Vec2,
 	padding:Vec2,  // NOTE: used for layout
 	//..
 	visible:bool,
@@ -51,7 +54,6 @@ UI_Window :: struct {
 g_window: ^UI_Window
 
 Input_Buffer :: [64]u8
-
 g_buffers:[2]Input_Buffer
 g_buffer_index:u32 = 0
 
@@ -65,8 +67,32 @@ copy_string_to_buffer :: proc(dest:[]u8, src:string) {
 	dest[len(src)] = 0
 }
 
-
 //..
+
+ui_clip_window :: proc() {
+	assert(g_window != nil)
+	clip_rect := to_recti(g_window.clip_rect)
+	rl.BeginScissorMode(clip_rect.x, clip_rect.y, clip_rect.width, clip_rect.height)
+}
+/*
+ui_get_window_recti :: proc() -> Recti {
+	window_recti := g_window.rect
+	window_recti.position += g_mem.view.position
+	return window_recti
+}
+
+ui_get_window_rect :: proc() -> Rect {
+	result := to_rect(ui_get_window_recti())
+	return result
+}
+*/
+
+ui_draw_window_rect :: proc(color: rl.Color) {
+	assert(g_window != nil)
+/*	window_recti := ui_get_window_recti()
+	window_rect := to_rect(window_recti)*/
+	rl.DrawRectangleRec(g_window.abs_rect, color)
+}
 
 ui_start :: proc(window:^UI_Window) -> bool {
 	assert(g_window == nil, "make sure to call ui_end before calling ui_start")
@@ -80,13 +106,11 @@ ui_start :: proc(window:^UI_Window) -> bool {
 		rl.GuiSetStyle(.DEFAULT, i32(rl.GuiDefaultProperty.TEXT_SIZE), g_window.font_size)
 
 		g_window.width = max(g_window.width, 150)
-		g_window.height = max(g_window.height, 75)
-		window_rect := to_rect(g_window)
+		g_window.height = max(g_window.height, 75)		
 
-		view_pos := to_vec2(g_mem.view.position)
-
-		window_rect.x += view_pos.x
-		window_rect.y += view_pos.y
+		g_window.abs_rect = to_rect(g_window)
+		g_window.abs_rect.x += f32(g_mem.view.position.x)
+		g_window.abs_rect.y += f32(g_mem.view.position.y)
 
 		max := &g_window.max
 		max.x = math.max(max.x, f32(g_window.clip_rect.width))		
@@ -95,22 +119,20 @@ ui_start :: proc(window:^UI_Window) -> bool {
 		content_rect := Rect {0, 0, max.x, max.y }
 		max^ = {}
 
+		ui_draw_window_rect(rl.WHITE)		
+		rl.GuiScrollPanel(g_window.abs_rect, nil, content_rect, &g_window.scroll_pos, &g_window.clip_rect)
 
-		rl.DrawRectangleRec(window_rect, rl.WHITE)
-		rl.GuiScrollPanel(window_rect, nil, content_rect, &g_window.scroll_pos, &g_window.clip_rect)
+		ui_clip_window()
 
 		if g_window.lockui {
 			rl.GuiLock()
 		}
-		clip_rect := to_recti(g_window.clip_rect)
+		
 
-		rl.BeginScissorMode(clip_rect.x, clip_rect.y, clip_rect.width, clip_rect.height)
-
-		g_window.cursor = g_window.scroll_pos + view_pos
+		g_window.cursor = g_window.scroll_pos + to_vec2(g_mem.view.position)
 	}
 	return result
 }
-
 
 ui_end :: proc() {
 	assert(g_window != nil)
@@ -170,12 +192,20 @@ ui_get_next_pos :: proc() -> Vec2 {
 	return result
 }
 
+ui_same_line :: proc() {
+	g_window.cursor = g_window.prev_pos
+}
+
 ui_push_item_dim_bounds :: proc(cursor_dim:Vec2, bounds_dim:Vec2) {
 	assert(g_window != nil)
-	abs_cursor_y := g_window.cursor.y - f32(g_mem.view.position.y) - g_window.scroll_pos.y
+	abs_cursor := g_window.cursor - to_vec2(g_mem.view.position) - g_window.scroll_pos
+
+	g_window.prev_pos = g_window.cursor
+	g_window.prev_pos.x = g_window.cursor.x + cursor_dim.x
 	g_window.cursor.y += cursor_dim.y
-	g_window.max.y = math.max(g_window.max.y, abs_cursor_y + bounds_dim.y)
-	g_window.max.x = math.max(g_window.max.x, bounds_dim.x)
+	g_window.cursor.x = g_window.scroll_pos.x + f32(g_mem.view.position.x)
+	g_window.max.y = math.max(g_window.max.y, abs_cursor.y + bounds_dim.y)
+	g_window.max.x = math.max(g_window.max.x, abs_cursor.x + bounds_dim.x)
 }
 
 
@@ -199,19 +229,21 @@ ui_text_box :: proc(id: string, target:^string, width: f32) {
 	} else {
 		target_string = strings.clone_to_cstring(target^, allocator = context.temp_allocator)
 	}
-	
-	if(rl.GuiTextBox({pos.x, pos.y, width, ATLAS_FONT_SIZE}, target_string, cap(g_buffers[0]), item_data.focused)) {
-		item_data.focused = !item_data.focused
-		if item_data.focused {
-			index := g_buffer_index
-			item_data.data = UI_Textbox_Data { index = index }
-			#assert(((len(g_buffers) - 1) & len(g_buffers)) == 0) // NOTE: is power of two
-			g_buffer_index = (g_buffer_index + 1) & (len(g_buffers) - 1)
+	rect := Rect {pos.x, pos.y, width, f32(g_window.font_size) + 6}
+	if item_data.focused || rectangles_intersect(g_window.abs_rect, rect) {		
+		if(rl.GuiTextBox(rect, target_string, cap(g_buffers[0]), item_data.focused)) {
+			item_data.focused = !item_data.focused
+			if item_data.focused {
+				index := g_buffer_index
+				item_data.data = UI_Textbox_Data { index = index }
+				#assert(((len(g_buffers) - 1) & len(g_buffers)) == 0) // NOTE: is power of two
+				g_buffer_index = (g_buffer_index + 1) & (len(g_buffers) - 1)
 
-			copy_string_to_buffer(g_buffers[index][:], target^)
-		} else {
-			delete(target^)
-			target^ = strings.clone(string(target_string))
+				copy_string_to_buffer(g_buffers[index][:], target^)
+			} else {
+				delete(target^)
+				target^ = strings.clone(string(target_string))
+			}
 		}
 	}
 
@@ -221,19 +253,34 @@ ui_text_box :: proc(id: string, target:^string, width: f32) {
 	
 }
 
-ui_edit_i32 :: proc() {
+ui_edit_i32 :: proc(id: string, value:^i32, min: i32, max: i32, width: f32 = 150) {
+	assert(g_window != nil)
+	ui_data := get_ui_data(id)
 
+	pos := ui_get_next_pos()
+	rect := Rect {pos.x, pos.y, width, f32(g_window.font_size)}
+
+	if ui_data.focused || rectangles_intersect(g_window.abs_rect, rect) {		
+		if rl.GuiSpinner(rect, nil, value, min, max, ui_data.focused) != 0 {
+			ui_data.focused = !ui_data.focused
+		}
+	}
+	dim := Vec2 { rect.width, rect.height } + 2 * g_window.padding
+	ui_push_item_dim(dim)
 }
 
 ui_button :: proc(lable: cstring) -> bool {
 	assert(g_window != nil)
 	pos := ui_get_next_pos()
 
-	size := Vec2 {f32(rl.MeasureText(lable, g_window.font_size)) + 10, f32(g_window.font_size) + 6}
+	spacing := rl.GuiGetStyle(.DEFAULT, i32(rl.GuiDefaultProperty.TEXT_SPACING))
+	size := rl.MeasureTextEx(g_window.font, lable, f32(g_window.font_size), f32(spacing)) + Vec2 { 10, 6 }
 	rect := Rect {pos.x, pos.y, size.x, size.y}
 
-	rl.DrawRectangleRec(rect, rl.RED)
-	result := rl.GuiButton(rect, lable)
+	result := false
+	if rectangles_intersect(g_window.abs_rect, rect) {
+		result = rl.GuiButton(rect, lable)
+	}
 	dim := size + 2 * g_window.padding
 	ui_push_item_dim(dim)
 	return result
@@ -242,10 +289,12 @@ ui_button :: proc(lable: cstring) -> bool {
 ui_draw_text :: proc(text: cstring) {
 	assert(g_window != nil)
 	pos := ui_get_next_pos()
-	size := Vec2 {f32(rl.MeasureText(text, g_window.font_size)) + f32(len(text) * 2), f32(g_window.font_size)}
+	spacing := rl.GuiGetStyle(.DEFAULT, i32(rl.GuiDefaultProperty.TEXT_SPACING))
+	size := rl.MeasureTextEx(g_window.font, text, f32(g_window.font_size), f32(spacing))
 	rect := Rect {pos.x, pos.y, size.x, size.y} 
-	rl.DrawRectangleRec(rect, rl.RED)
-	rl.GuiLabel(rect, text)
+	if rectangles_intersect(g_window.abs_rect, rect) {
+		rl.GuiLabel(rect, text)
+	}
 	dim := size + 2 * g_window.padding
 	ui_push_item_dim(dim)
 }
@@ -280,6 +329,7 @@ ui_dropdown :: proc(id:string, options:cstring, index:^c.int, width:u32 ) {
 	if !ok {
 		ui_data.data = UI_Dropdown_Data {}
 		dropdown_data, ok = &ui_data.data.(UI_Dropdown_Data)
+		assert(ok)
 	}
 
 	dropdown_data.rect = rect
@@ -301,6 +351,10 @@ ui_union_dropdown :: proc(id:string, target:^$T, width:u32) {
 
 		if info, ok := type_info.variant.(reflect.Type_Info_Union); ok {
 			options := make([dynamic]string, allocator = context.temp_allocator)
+
+			if !info.no_nil {
+				append(&options, "Nil")
+			}
 			
 			for v in info.variants {
 				named_type, is_named := v.variant.(reflect.Type_Info_Named)
@@ -310,21 +364,14 @@ ui_union_dropdown :: proc(id:string, target:^$T, width:u32) {
 			}
 			
 			tag: i32 = cast(i32)reflect.get_union_variant_raw_tag(target^)		
-			if !info.no_nil {
-				if tag == 0 {
-					// TODO: error handling
-					return
-				}
-				tag -= 1
-			}
-
+			
 			ui_data := get_ui_data(id)
 			dropdown_data, is_dropdown := ui_data.data.(UI_Dropdown_Data)
 
 			if is_dropdown && dropdown_data.was_focused {
 				if dropdown_data.index != tag {
 					tag = dropdown_data.index
-					raw_tag := tag if info.no_nil else (tag + 1)
+					raw_tag := tag
 					reflect.set_union_variant_raw_tag(target^, i64(raw_tag))
 				}
 			}

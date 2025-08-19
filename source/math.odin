@@ -1,6 +1,8 @@
 package game
 
+import "base:intrinsics"
 import "core:math"
+import "core:reflect"
 
 Vec2i :: [2]i32
 
@@ -36,6 +38,25 @@ Recti :: struct {
     using position: Vec2i,
     width: i32,
     height: i32,
+}
+
+get_rect_center :: proc {
+    get_rect_center_f32,
+    get_rect_center_i32,
+}
+
+get_rect_center_f32 :: proc(rect:Rect) -> Vec2 {
+    result:Vec2
+    result.x = rect.x + (rect.width * 0.5)
+    result.y = rect.y + (rect.height * 0.5)
+    return result
+}
+
+get_rect_center_i32 :: proc(rect:Recti) -> Vec2i {
+    result:Vec2i
+    result.x = rect.x + i32(math.round(f32(rect.width) * 0.5))
+    result.y = rect.y + i32(math.round(f32(rect.height) * 0.5))
+    return result
 }
 
 get_rect_max :: proc {
@@ -89,6 +110,20 @@ is_in_rectangle_f32_i32 :: proc(rect: Rect, p_: Vec2i) -> bool {
                p.y >= rect.y && p.y < rect_max.y)
     return result
 }
+
+//..
+
+rectangles_intersect :: proc(a: Rect, b: Rect) -> bool {
+    a_max := Vec2 { a.x + a.width, a.y + a.height }
+    b_max := Vec2 { b.x + b.width, b.y + b.height }
+
+    result := (a.x < b_max.x && a_max.x > b.x &&
+               a.y < b_max.y && a_max.y > b.y)
+
+    return result
+}
+
+//..
 
 to_recti :: proc(rect: Rect) -> Recti {
     result := Recti {

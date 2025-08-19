@@ -30,7 +30,7 @@ package game
 import "core:encoding/json"
 import "core:os"
 import "core:fmt"
-//import "core:math/linalg"
+import "core:mem"
 import "core:math"
 import "core:slice"
 import rl "vendor:raylib"
@@ -50,17 +50,61 @@ WINDOW_CENTER_X :: (PIXEL_WINDOW_WIDTH * 0.5)
 WINDOW_CENTER_Y :: (PIXEL_WINDOW_HEIGHT * 0.5)
 CLEAR_COLOR : rl.Color : {80, 10, 70, 255}
 
-WORLD_PATH :: "assets/world.json"
+WORLD_PATH_JSON :: "assets/world.json"
+WORLD_PATH_SPF :: "assets/world.spf"
+
+
+
+Sleeping_Berth :: struct {
+}
+
+Canteen :: struct {
+    // NOTE: gally and crew mess
+}
+
+Engine_Room :: struct {
+}
+
+Filtration_System :: struct {
+}
+
+Cockpit :: struct {
+}
+
+Aquaponic_Room :: struct {
+}
+
+Infirmary :: struct {
+}
+
+Room_Variant :: union #no_nil {
+    Sleeping_Berth,
+    Canteen,
+    Engine_Room,
+    Filtration_System,
+    Cockpit,
+    Aquaponic_Room,
+    Infirmary,    
+}
+
+Room_Connection :: struct {
+    a_idx: u32,
+    b_idx: u32,
+    distance: i32, // cost for path
+}
 
 Room :: struct {
     using rect: Recti,
+    connections: [dynamic]u32,
+    variant_data: Room_Variant,
 }
 
-
-
+//..
 
 World :: struct {
-    rooms: [dynamic] Room,
+    rooms: [dynamic]Room,
+    connections: [dynamic]Room_Connection,
+
 }
 
 Game_View :: struct {
@@ -70,15 +114,35 @@ Game_View :: struct {
 
 //..
 
+Node_Info :: struct {
+    prev_room_idx: u32,
+    room_idx: u32,
+    total_distance: i32,    
+    connection_idx: int,
+}
+
+//..
+
+Player :: struct {
+    room_idx: u32,
+}
+
+//..
+
 Game_Memory :: struct {
-    view: Game_View,
     atlas: rl.Texture,
     font: rl.Font,
     music: rl.Music,
+    //..
+    view: Game_View,
     world: World,
+    player: Player,
+    //..
     run: bool,
     //..
     editor_state: Editor_State,
+    //..
+    grg: Render_Group,
 }
 
 g_mem: ^Game_Memory
@@ -105,6 +169,29 @@ get_game_mouse_position :: proc() -> Vec2 {
     return result
 }
 
+//..
+
+push_room_connection :: proc(connection: Room_Connection, color: rl.Color, font_size: f32) {
+    a := g_mem.world.rooms[connection.a_idx]
+    b := g_mem.world.rooms[connection.b_idx]
+
+    a_pos := get_rect_center(to_rect(a.rect))
+    b_pos := get_rect_center(to_rect(b.rect))
+    
+    grc := &g_mem.grg.commands    
+
+    distance := fmt.caprintf("%v", connection.distance, allocator = g_mem.grg.arena_allocator)    
+
+    dim := rl.MeasureTextEx(rl.GetFontDefault(), distance, font_size, 1)
+    radius := max(10, dim.x * 0.5)
+    center := (a_pos + b_pos) * 0.5
+    
+    push_line(grc, a_pos, b_pos, 2, color)
+    push_circle(grc, center, radius + 2, color)
+    push_circle(grc, center, radius, rl.WHITE)
+    push_text(grc, rl.GetFontDefault(), distance, center - dim * 0.5, font_size, 1, color)
+}
+
 // =================================
 // NOTE: update ====================
 // =================================
@@ -115,11 +202,120 @@ update :: proc() {
         rl.ToggleBorderlessWindowed()
     }
 
-    if rl.IsKeyPressed(.ESCAPE) {
+    if rl.IsKeyDown(.Q) && rl.IsKeyPressed(.ESCAPE) {
         g_mem.run = false
     }    
-}
 
+
+    // NOTE: START show shortest path
+
+    if !g_mem.editor_state.window.visible &&
+        g_mem.editor_state.mode == .Idle {
+
+        mouse_pos := get_game_mouse_position()
+        target_room_idx := -1
+        for room, idx in g_mem.world.rooms {
+            if is_in_rectangle(room, mouse_pos) {
+                target_room_idx = idx
+                break
+            }
+        }
+
+        if target_room_idx >= 0 && 
+        target_room_idx < len(g_mem.world.rooms) {
+            
+
+            path := make([dynamic]Node_Info, 0, len(g_mem.world.rooms), allocator = context.temp_allocator)
+            
+            prev_node := Node_Info { room_idx = u32(g_mem.player.room_idx), connection_idx = -1 }            
+            append(&path, prev_node)
+            node_table_ := make([]i32, len(g_mem.world.rooms), allocator = context.temp_allocator)            
+            for &node in node_table_ {
+                node = -1
+            }
+            node_table_[prev_node.room_idx] = 0
+            
+            target_idx := u32(target_room_idx)
+
+            processed_room_count := 0
+
+            for prev_node.room_idx != target_idx {
+                prev_room := g_mem.world.rooms[prev_node.room_idx]
+                for connection_idx in prev_room.connections {
+                    connection := g_mem.world.connections[connection_idx]
+
+                    room_idx := connection.a_idx if connection.a_idx != prev_node.room_idx else connection.b_idx
+                    node_idx := node_table_[room_idx]
+                    
+                    new_node: Node_Info
+                    add_new_node := true
+                    if node_idx >= 0 {           
+                        node := path[node_idx]
+                        new_node.total_distance = prev_node.total_distance + connection.distance 
+                        if node.total_distance > new_node.total_distance {
+                            ordered_remove(&path, node_idx)
+                            node.total_distance = new_node.total_distance
+                            new_node = node
+                            new_node.prev_room_idx = prev_node.room_idx
+                            new_node.connection_idx = int(connection_idx)
+                        } else {
+                            add_new_node = false
+                        }
+                    } else {
+                        new_node = Node_Info {
+                            prev_room_idx = prev_node.room_idx,
+                            room_idx = room_idx,
+                            connection_idx = int(connection_idx),
+                            total_distance = prev_node.total_distance + connection.distance,
+                        }
+                    }
+
+                    if add_new_node {
+                        // NOTE: ordered insert      
+                        added_node := false
+                        for idx := len(path) - 1; idx >= processed_room_count; idx -= 1 {
+                            test_node := path[idx]
+                            if test_node.total_distance <= new_node.total_distance {
+                                new_idx := idx + 1
+                                inject_at(&path, new_idx, new_node)
+                                node_table_[room_idx] = i32(new_idx)
+                                for moved_idx in (new_idx + 1)..<len(path) {
+                                    node := &path[moved_idx]
+                                    node_table_[node.room_idx] = i32(moved_idx)
+                                }
+                                added_node = true
+                                break
+                            }
+                        }
+
+                        assert(added_node)
+                    }
+                }
+
+                processed_room_count += 1
+                prev_node = path[processed_room_count]                
+            }
+
+            if prev_node.connection_idx >= 0 {                
+                connection := g_mem.world.connections[prev_node.connection_idx]
+                push_room_connection(connection, rl.BLACK, 12)
+                for prev_node.prev_room_idx != g_mem.player.room_idx {               
+                    node_idx := node_table_[prev_node.prev_room_idx]
+                    prev_node = path[node_idx]
+                    connection = g_mem.world.connections[prev_node.connection_idx]
+                    push_room_connection(connection, rl.BLACK, 12)
+                }
+
+                if rl.IsMouseButtonPressed(.LEFT) {
+                    g_mem.player.room_idx = target_idx
+                }
+            }
+        }
+    }
+
+    // NOTE: END   show shortest path
+
+}
 
 // NOTE: drawing
 
@@ -228,33 +424,20 @@ draw :: proc() {
     rl.DrawRectangleRec({-3, -3, PIXEL_WINDOW_WIDTH + 6, PIXEL_WINDOW_HEIGHT + 6}, rl.BLACK)
     rl.DrawRectangleRec({0, 0, PIXEL_WINDOW_WIDTH, PIXEL_WINDOW_HEIGHT}, CLEAR_COLOR)
 
-    for room in g_mem.world.rooms {
+    for room in g_mem.world.rooms {        
         draw_room(room.rect)
     }
+
     // NOTE: editor
     draw_editor()
-
+    draw_render_commands(g_mem.grg.commands)
+    clear_render_group(&g_mem.grg)
     //..
-/*
-    mouse_pos := get_game_mouse_position()
-    rl.DrawTextEx(g_mem.font, 
-        fmt.ctprintfln("mouse pos %v \nzoom: %v\noffset: %v\ntarget: %v",
-        mouse_pos, 
-        view.zoom,
-        view.offset,
-        view.target), {}, 32 / view.zoom, 0, rl.WHITE)
-  */  
+    
     rl.EndMode2D()
 
     draw_editor_ui()
     
-/*
-    room_texture := atlas_textures[.Room]
-    m_p := rl.GetMousePosition()
-    t :=  cast(f32)(1 + math.sin(rl.GetTime() * 0.5)) * 0.5
-
-    rl.DrawTexturePro(g_mem.atlas, room_texture.rect, {m_p.x, m_p.y, room_texture.document_size.x * ((t * 4) + 1), room_texture.document_size.y * (t * 4 + 1)}, {}, t * 360, rl.WHITE)
-*/
     rl.EndDrawing()        
 }
 
@@ -295,7 +478,7 @@ delete_atlased_font :: proc(font: rl.Font) {
 load_atlased_font :: proc(atlas: ^rl.Texture) -> rl.Font {
     num_glyphs := len(atlas_glyphs)
     font_rects := make([]Rect, num_glyphs)
-    glyphs := make([]rl.GlyphInfo, num_glyphs)
+    glyphs := make([]rl.GlyphInfo, num_glyphs)    
 
     for ag, idx in atlas_glyphs {
         font_rects[idx] = ag.rect
@@ -325,7 +508,7 @@ load_atlased_font :: proc(atlas: ^rl.Texture) -> rl.Font {
 
 
 @(export)
-game_init_window :: proc() {
+game_init_window :: proc() {    
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
     rl.InitWindow(1280, 720, "Odin + Raylib + Hot Reload template!")
     rl.SetWindowPosition(200, 200)
@@ -334,8 +517,7 @@ game_init_window :: proc() {
 }
 
 @(export)
-game_init :: proc() {   
-
+game_init :: proc() {
     g_mem = new(Game_Memory)
     rl.InitAudioDevice()
 
@@ -354,19 +536,22 @@ game_init :: proc() {
         },
     }
     
-    if world_data, success := os.read_entire_file(WORLD_PATH, allocator = context.temp_allocator); success {
-        json.unmarshal(world_data, &g_mem.world)
-
+    if load_world(&g_mem.world, WORLD_PATH_SPF) {        
         // NOTE: delete invalid rooms        
         for i := 0; i < len(g_mem.world.rooms); i += 1 {
             room := g_mem.world.rooms[i]
-            if room.width <= 2 || room.height <= 2 {
+            if room.rect.width <= 2 || room.rect.height <= 2 {
                 ordered_remove(&g_mem.world.rooms, i)
                 fmt.printfln("removed invalid room %v", room)                
                 i -= 1                
             }
         }
+    } else {
+        delete_world(&g_mem.world)
+        g_mem.world = {}
     }
+
+    init_render_group(&g_mem.grg, 128 * mem.Kilobyte)
 
     game_hot_reloaded(g_mem)    
     editor_init()
@@ -386,16 +571,15 @@ game_should_run :: proc() -> bool {
 
 @(export)
 game_shutdown :: proc() {
-    if world_data, err := json.marshal(g_mem.world, allocator = context.temp_allocator); err == nil {
-        os.write_entire_file(WORLD_PATH, world_data)
-    }
+    save_world(&g_mem.world, WORLD_PATH_SPF)
 
     editor_shutdown()
     delete_atlased_font(g_mem.font)
     rl.UnloadTexture(g_mem.atlas)
     rl.UnloadMusicStream(g_mem.music)
-    rl.CloseAudioDevice()    
-    delete(g_mem.world.rooms)
+    rl.CloseAudioDevice()
+    delete_world(&g_mem.world)
+    delete_render_group(&g_mem.grg)
     free(g_mem)    
 }
 
